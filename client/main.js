@@ -17,20 +17,27 @@ const CMD_OFFER = 'offer';
 const CMD_ANSWER = 'answer';
 const CMD_CANDIDATE = 'candidate';
 const CMD_NEW_PEER = 'new-peer';
+const CMD_LEAVE_PEER = 'leave-peer';
 
 function join() {
+    console.log(window.location);
     var constraints = {
         audio: true,
         video: { width: 400, height: 300 },
     }
-    navigator.mediaDevices.getUserMedia(constraints).then(onGetUserMedia);
+
+    navigator.mediaDevices.getUserMedia(constraints)
+        .then(onGetUserMedia)
+        .catch(() => {
+            navigator.mediaDevices.getDisplayMedia(constraints).then(onGetUserMedia);
+        });
 }
 
 function onGetUserMedia(stream) {
     localStream = stream;
     localVideo.srcObject = stream;
 
-    socket = new WebSocket('ws://localhost:9999');
+    socket = new WebSocket('ws://10.13.209.116:9999');
     socket.addEventListener('open', onSocketOpen);
     socket.addEventListener('message', onSocketMessage);
 }
@@ -58,6 +65,8 @@ function leave() {
     localVideo.srcObject = null;
 
     socket.close();
+
+    closePeerConnection();
 }
 
 function sendCommand(cmd, data) {
@@ -72,6 +81,9 @@ function handleCommand(cmd, data) {
             break;
         case CMD_NEW_PEER:
             handleRemoteNewPeer(data);
+            break;
+        case CMD_LEAVE_PEER:
+            handleRemoteLeavePeer(data);
             break;
         case CMD_OFFER:
             handleRemoteOffer(data);
@@ -112,7 +124,17 @@ function handleRemoteNewPeer(userId) {
         });
 }
 
+function handleRemoteLeavePeer(userId) {
+    console.log('remote peer leave: ' + userId);
+    if (remoteUserId == userId) {
+        closePeerConnection();
+    }
+}
+
+
 function handleRemoteOffer({ fromUserId, value }) {
+    remoteUserId = fromUserId;
+
     if (pc == null) {
         pc = createPeerConnection();
     }
@@ -127,7 +149,7 @@ function handleRemoteOffer({ fromUserId, value }) {
             sendCommand(CMD_ANSWER, {
                 roomId,
                 fromUserId: localUserId,
-                remoteUserId: fromUserId,
+                remoteUserId,
                 value: JSON.stringify(localDescription),
             });
         });
@@ -153,17 +175,38 @@ function setRemoteDescription(description) {
 function handleRemoteCandidate({ value }) {
     const candidate = JSON.parse(value);
     console.log('handleRemoteCandidate', candidate);
-    pc.addIceCandidate(candidate).then(err => console.log('addCandidate error', err));
+    pc.addIceCandidate(candidate).catch(err => console.log('addCandidate error', err));
 }
 
 function createPeerConnection() {
-    const pc = new RTCPeerConnection();
-    pc.onicecandidate = handleIceCandidate;
+    const configuration = {
+        bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require',
+        iceTransportPolicy: 'relay',
+        iceServers: [
+            {
+                urls: [
+                    'turn:10.13.209.116:3478?transport=udp',
+                    'turn:10.13.209.116:3478?transport=tcp'
+                ],
+                username: 'vivo',
+                credential: '123456'
+            },
+            {
+                urls: [
+                    'stun:10.13.209.116:3478'
+                ]
+            }
+        ]
+    };
+    const pc = new RTCPeerConnection(configuration);
+    pc.onicecandidate = handleOnIceCandidate;
+    pc.ontrack = handleOnTrack;
     localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
     return pc;
 }
 
-function handleIceCandidate(event) {
+function handleOnIceCandidate(event) {
     if (!event || !event.candidate) {
         return;
     }
@@ -180,6 +223,20 @@ function handleIceCandidate(event) {
         remoteUserId,
         value: JSON.stringify(candidate),
     });
+}
+
+function handleOnTrack(event) {
+    remoteVideo.srcObject = event.streams[0];
+}
+
+function closePeerConnection() {
+    if (pc != null) {
+        pc.close();
+        pc = null;
+    }
+
+    remoteUserId = null;
+    remoteVideo.srcObject = null;
 }
 
 joinButton.addEventListener('click', join);

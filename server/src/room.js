@@ -3,7 +3,8 @@ import {
     CMD_NEW_PEER,
     CMD_OFFER,
     CMD_ANSWER,
-    CMD_CANDIDATE
+    CMD_CANDIDATE,
+    CMD_LEAVE_PEER
 } from './command.js';
 
 const roomMap = new Map();
@@ -51,14 +52,23 @@ const joinRoom = (roomId, user) => {
 
 const leaveRoom = (roomId, user) => {
     const room = roomMap.get(roomId);
-    if (room) {
-        const userId = user.getId();
-        room.users.delete(userId);
-        console.log(`[SYSTEM] user(${userId}) leave ${room.name}`);
+    if (!room) {
+        return;
+    }
 
-        if (room.users.size == 0) {
-            destroyRoom(roomId);
-        }
+    const userId = user.getId();
+    room.users.delete(userId);
+    console.log(`[SYSTEM] user(${userId}) leave ${room.name}`);
+
+    if (room.users.size == 0) {
+        destroyRoom(roomId);
+    }
+    else {
+        room.users.forEach(o => {
+            if (o !== user) {
+                o.sendCommand(CMD_LEAVE_PEER, userId);
+            }
+        });
     }
 };
 

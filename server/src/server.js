@@ -16,7 +16,7 @@ const handleConnect = (conn) => {
     conn.user = user;
     conn.on('text', msg => handleText(conn, msg));
     conn.on('close', () => handleClose(conn));
-    conn.on('error', err => console.log(`[error] ${err}`));
+    conn.on('error', err => handleError(conn, err));
 };
 
 const handleText = (conn, message) => {
@@ -48,6 +48,11 @@ const handleText = (conn, message) => {
 const handleClose = (conn) => {
     const user = conn.user;
     console.log(`[${user.getId()}] CLOSED`);
+};
+
+const handleError = (conn, err) => {
+    const user = conn.user;
+    console.log(`[error] ${err} for user(${user.getId()})`);
 };
 
 const startServer = (port) => {
